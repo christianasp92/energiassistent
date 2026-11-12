@@ -276,7 +276,7 @@
                 sort: 'TimeDK asc',
                 limit: '1000'
             });
-            const url = `https://api.energidataservice.dk/dataset/DayAheadPrices?${params.toString()}`;
+            const url = `https://energipriser.christianasp92.workers.dev?${params.toString()}`;
 
             try {
                 const response = await fetch(url, { method: 'GET', mode: 'cors' });

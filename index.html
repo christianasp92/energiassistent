@@ -263,68 +263,66 @@
 
         // ==================== DATAHENTNING ====================
 
-        async function fetchLivePrices() {
-            const now = new Date();
-            const todayStr = toIsoDate(now);
-            const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-            const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
+       async function fetchLivePrices() {
+    const now = new Date();
+    const todayStr = toIsoDate(now);
+    const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+    const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
 
-            const params = new URLSearchParams({
-                start: `${startStr}T00:00`,
-                end: `${endStr}T00:00`,
-                filter: JSON.stringify({ PriceArea: [currentZone] }),
-                sort: 'TimeDK asc',
-                limit: '1000'
-            });
-            const url = `https://energipriser.christianasp92.workers.dev?${params.toString()}`;
+    const params = new URLSearchParams({
+        start: `${startStr}T00:00`,
+        end: `${endStr}T00:00`,
+        filter: JSON.stringify({ PriceArea: [currentZone] }),
+        sort: 'TimeDK asc',
+        limit: '1000'
+    });
+    const url = `https://energipriser.christianasp92.workers.dev/?${params.toString()}`;
 
-            try {
-                const response = await fetch(url, { method: 'GET', mode: 'cors' });
-                if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                const json = await response.json();
-                const records = json.records || [];
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const json = await response.json();
+        const records = json.records || [];
 
-                // Kun dagens danske timer (filtreret på dansk tid)
-                const buckets = Array.from({ length: 24 }, () => []);
-                records.forEach(r => {
-                    if (!r.TimeDK || !r.TimeDK.startsWith(todayStr)) return;
-                    if (r.DayAheadPriceDKK == null) return;
-                    const h = Number(r.TimeDK.substring(11, 13));
-                    buckets[h].push(r.DayAheadPriceDKK / 1000); // DKK/MWh -> kr/kWh
-                });
+        const buckets = Array.from({ length: 24 }, () => []);
+        records.forEach(r => {
+            if (!r.TimeDK || !r.TimeDK.startsWith(todayStr)) return;
+            if (r.DayAheadPriceDKK == null) return;
+            const h = Number(r.TimeDK.substring(11, 13));
+            buckets[h].push(r.DayAheadPriceDKK / 1000); // DKK/MWh -> kr/kWh
+        });
 
-                rawSpotPrices = [];
-                buckets.forEach((vals, h) => {
-                    if (vals.length === 0) return;
-                    rawSpotPrices.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
-                });
+        rawSpotPrices = [];
+        buckets.forEach((vals, h) => {
+            if (vals.length === 0) return;
+            rawSpotPrices.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
+        });
 
-                if (rawSpotPrices.length === 0) {
-                    throw new Error(`Ingen priser for ${todayStr} (modtog ${records.length} rækker)`);
-                }
+        if (rawSpotPrices.length === 0) {
+            throw new Error(`Ingen priser for ${todayStr} (modtog ${records.length} rækker)`);
+        }
 
-                rebuildPrices();
-                const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-                document.getElementById('date-badge').innerText =
-                    `${todayStr.split('-').reverse().join('/')} · opdateret ${time}`;
-            } catch (err) {
-                } catch (err) {
-    console.error('Elpris-fejl:', err);
-    // Behold de sidste gode priser, hvis der er nogen
-    if (rawSpotPrices.length > 0) {
-        document.getElementById('current-status-text').innerText =
-            `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
-        updateDashboard();
+        rebuildPrices();
+        const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+        document.getElementById('date-badge').innerText =
+            `${todayStr.split('-').reverse().join('/')} · opdateret ${time}`;
+    } catch (err) {
+        console.error('Elpris-fejl:', err);
+        if (rawSpotPrices.length > 0) {
+            // Behold de sidste gode priser
+            document.getElementById('current-status-text').innerText =
+                `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
+            updateDashboard();
+            return;
+        }
+        document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
+        document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
         return;
     }
-    document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
-    document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
-    return;
 
-            }
+    updateDashboard();
+}
 
-            updateDashboard();
-        }
 
         // ==================== DASHBOARD ====================
 

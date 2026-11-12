@@ -36,8 +36,8 @@
                 </button>
 
                 <div class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
-                    <button id="btn-dk1" onclick="setZone('DK1')" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition">DK1 (Vest)</button>
-                    <button id="btn-dk2" onclick="setZone('DK2')" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">DK2 (Øst)</button>
+                    <button id="btn-dk1" onclick="setZone('DK1')" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">DK1 (Vest)</button>
+                    <button id="btn-dk2" onclick="setZone('DK2')" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition">DK2 (Øst)</button>
                 </div>
             </div>
         </div>
@@ -69,10 +69,10 @@
                 </div>
 
                 <div class="w-full md:w-auto bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60 text-slate-400 text-xs space-y-2 shrink-0">
-                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Døgnets nøgletal</span>
+                    <span id="stat-title" class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Døgnets nøgletal</span>
                     <div class="flex md:flex-col justify-between gap-4 md:gap-1.5">
                         <div class="flex items-center justify-between gap-6">
-                            <span>Laveste i dag:</span>
+                            <span>Laveste:</span>
                             <span id="stat-min" class="font-bold text-slate-300">-- kr</span>
                         </div>
                         <div class="flex items-center justify-between gap-6">
@@ -91,18 +91,24 @@
 
         <!-- BLOK-GRAF -->
         <section class="glass-panel rounded-3xl p-6 space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                     <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                        Timepriser i dag
+                        Timepriser
                         <span id="date-badge" class="text-xs font-normal text-slate-400 bg-slate-800/80 px-2.5 py-0.5 rounded-full"></span>
                     </h2>
                     <p class="text-xs text-slate-400">Hver søjle er 1 time. Hvid kant = nuværende time. Grøn kant = billigste ladevindue.</p>
                 </div>
-                <div class="flex items-center gap-3 text-xs text-slate-400">
-                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Billig</span>
-                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> Normal</span>
-                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500"></span> Dyr</span>
+                <div class="flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-semibold self-start sm:self-auto">
+                        <button id="btn-day-today" onclick="setDay('today')" class="px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition">I dag</button>
+                        <button id="btn-day-tomorrow" onclick="setDay('tomorrow')" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">I morgen</button>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-slate-400">
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Billig</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> Normal</span>
+                        <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500"></span> Dyr</span>
+                    </div>
                 </div>
             </div>
 
@@ -129,7 +135,7 @@
                     </div>
                     <div>
                         <h3 class="font-bold text-white">Hvornår skal elbilen lades?</h3>
-                        <p class="text-xs text-slate-400">Beregnet ud fra dagens timepriser (11 kW lader)</p>
+                        <p class="text-xs text-slate-400">Beregnet ud fra timepriserne for den valgte dag (11 kW lader)</p>
                     </div>
                 </div>
 
@@ -165,7 +171,7 @@
                 <div class="space-y-3 text-xs">
                     <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex justify-between items-center">
                         <div>
-                            <span class="font-semibold text-slate-200 block">Billigste 2 timer i dag (vask/opvask)</span>
+                            <span class="font-semibold text-slate-200 block">Billigste 2 timer (vask/opvask)</span>
                             <span id="home-best-2h" class="text-slate-400 text-[11px]">Beregner bedste tidspunkt...</span>
                         </div>
                         <span id="home-best-price" class="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">-- kr</span>
@@ -219,19 +225,40 @@
         const MOMS_FAKTOR = 1.25;
         const EV_KW = 11;
 
+        // Farver til blokke og tooltips (skal matche Tailwind-klasserne)
+        const TIER_COLORS = {
+            low:  { hex: '#10b981', bar: 'bg-emerald-500 hover:bg-emerald-400', text: 'text-emerald-500', border: 'border-emerald-500' },
+            mid:  { hex: '#f59e0b', bar: 'bg-amber-500 hover:bg-amber-400',     text: 'text-amber-500',   border: 'border-amber-500' },
+            high: { hex: '#f43f5e', bar: 'bg-rose-500 hover:bg-rose-400',       text: 'text-rose-500',    border: 'border-rose-500' }
+        };
+
         // ==================== TILSTAND ====================
 
-        let currentZone = 'DK1';
+        let currentZone = 'DK2';        // Standard: DK2
+        let selectedDay = 'today';      // 'today' eller 'tomorrow'
         let includeTaxes = true;
         let selectedEvKwh = 44;
-        let rawSpotPrices = [];   // Timegennemsnit af spotpris i kr/kWh ekskl. moms
-        let todaysPrices = [];    // Endelige timepriser til visning
+        let lastRecords = [];           // Rå records for hele området (i dag + i morgen)
+        let lastRecordsKey = '';        // zone|startDato|slutDato for de gemte records
+        let rawSpotPrices = [];         // Timegennemsnit af spotpris for valgt dag (ekskl. moms)
+        let todaysPrices = [];          // Endelige timepriser for valgt dag
         let bestWindowIndices = [];
+
+        const priceCache = {};          // nøgle: zone|start|slut -> { records, fetchedAt }
+        const PRICE_CACHE_MS = 5 * 60 * 1000;
+        let activeController = null;
+        let requestCounter = 0;
 
         // ==================== HJÆLPEFUNKTIONER ====================
 
         function toIsoDate(d) {
             return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        }
+
+        function getTargetDateStr() {
+            const now = new Date();
+            const offset = selectedDay === 'tomorrow' ? 1 : 0;
+            return toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset));
         }
 
         function getNetworkTariff(hour) {
@@ -261,145 +288,164 @@
             }));
         }
 
+        // Omdan records til timegennemsnit for én dato
+        function buildHourlySpot(records, dateStr) {
+            const buckets = Array.from({ length: 24 }, () => []);
+            records.forEach(r => {
+                if (!r.TimeDK || !r.TimeDK.startsWith(dateStr)) return;
+                if (r.DayAheadPriceDKK == null) return;
+                const h = Number(r.TimeDK.substring(11, 13));
+                buckets[h].push(r.DayAheadPriceDKK / 1000); // DKK/MWh -> kr/kWh
+            });
+            const result = [];
+            buckets.forEach((vals, h) => {
+                if (vals.length === 0) return;
+                result.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
+            });
+            return result;
+        }
+
+        // Vælger den valgte dag ud fra de gemte records og opdaterer visningen (ingen nyt kald)
+        function applySelectedDay() {
+            const dateStr = getTargetDateStr();
+            const newRaw = buildHourlySpot(lastRecords, dateStr);
+
+            if (newRaw.length === 0) {
+                rawSpotPrices = [];
+                todaysPrices = [];
+                const dagLabel = selectedDay === 'tomorrow' ? 'Morgendagens priser' : 'Dagens priser';
+                const hint = selectedDay === 'tomorrow'
+                    ? 'Offentliggøres typisk omkring kl. 13.'
+                    : 'Der er ingen data for i dag endnu.';
+                document.getElementById('current-hour-label').innerText = `${dagLabel} er ikke klar`;
+                document.getElementById('current-status-text').innerText = hint;
+                document.getElementById('current-price-val').innerText = '--.--';
+                resetChart();
+                return;
+            }
+
+            rawSpotPrices = newRaw;
+            rebuildPrices();
+            updateDashboard();
+        }
+
+        function resetChart() {
+            document.getElementById('block-chart').innerHTML =
+                '<div class="w-full text-center text-xs text-slate-500 pb-20">Ingen priser at vise endnu</div>';
+        }
+
         // ==================== DATAHENTNING ====================
 
-       // ==================== DATAHENTNING ====================
+        async function fetchLivePrices() {
+            const now = new Date();
+            const todayStr = toIsoDate(now);
+            const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+            const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
+            const zone = currentZone;
+            const key = `${zone}|${startStr}|${endStr}`;
 
-const PRICE_CACHE_MS = 5 * 60 * 1000;   // Genbrug hentede data i 5 minutter pr. zone
-const priceCache = {};                  // nøgle: zone|dato -> { records, fetchedAt }
-let activeController = null;            // Det kald der er i gang
-let requestCounter = 0;                 // Bruges til at ignorere forældede svar
+            const myRequest = ++requestCounter;
+            if (activeController) activeController.abort();
+            activeController = new AbortController();
 
-async function fetchLivePrices() {
-    const now = new Date();
-    const todayStr = toIsoDate(now);
-    const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-    const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
-    const zone = currentZone;
-    const cacheKey = `${zone}|${startStr}|${endStr}`;
+            try {
+                let records;
+                const cached = priceCache[key];
 
-    const myRequest = ++requestCounter;
+                if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_MS) {
+                    records = cached.records;
+                } else {
+                    const params = new URLSearchParams({
+                        start: `${startStr}T00:00`,
+                        end: `${endStr}T00:00`,
+                        filter: JSON.stringify({ PriceArea: [zone] }),
+                        sort: 'TimeDK asc',
+                        limit: '1000'
+                    });
+                    const url = `https://energipriser.christianasp92.workers.dev/?${params.toString()}`;
 
-    // Annuller det forrige kald, hvis brugeren har skiftet zone
-    if (activeController) activeController.abort();
-    activeController = new AbortController();
+                    const response = await fetch(url, { signal: activeController.signal });
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const json = await response.json();
+                    records = json.records || [];
+                    priceCache[key] = { records, fetchedAt: Date.now() };
+                }
 
-    document.getElementById('date-badge').innerText = todayStr.split('-').reverse().join('/');
+                // Svaret er forældet, hvis zone eller nyt kald er skiftet i mellemtiden
+                if (myRequest !== requestCounter) return;
 
-    try {
-        let records;
-        const cached = priceCache[cacheKey];
+                lastRecords = records;
+                lastRecordsKey = key;
 
-        if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_MS) {
-            records = cached.records;
-        } else {
-            const params = new URLSearchParams({
-                start: `${startStr}T00:00`,
-                end: `${endStr}T00:00`,
-                filter: JSON.stringify({ PriceArea: [zone] }),
-                sort: 'TimeDK asc',
-                limit: '1000'
-            });
-            const url = `https://energipriser.christianasp92.workers.dev/?${params.toString()}`;
+                const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('date-badge').innerText =
+                    `${todayStr.split('-').reverse().join('/')} · ${zone} · opdateret ${time}`;
 
-            const response = await fetch(url, { signal: activeController.signal });
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            const json = await response.json();
-            records = json.records || [];
-            priceCache[cacheKey] = { records, fetchedAt: Date.now() };
+                applySelectedDay();
+            } catch (err) {
+                if (err.name === 'AbortError' || myRequest !== requestCounter) return;
+                console.error('Elpris-fejl:', err);
+
+                if (rawSpotPrices.length > 0) {
+                    document.getElementById('current-status-text').innerText =
+                        `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
+                    updateDashboard();
+                    return;
+                }
+                document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
+                document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
+            }
         }
-
-        // Hvis brugeren har skiftet zone i mellemtiden, må svaret ikke vises
-        if (myRequest !== requestCounter) return;
-
-        const buckets = Array.from({ length: 24 }, () => []);
-        records.forEach(r => {
-            if (!r.TimeDK || !r.TimeDK.startsWith(todayStr)) return;
-            if (r.DayAheadPriceDKK == null) return;
-            const h = Number(r.TimeDK.substring(11, 13));
-            buckets[h].push(r.DayAheadPriceDKK / 1000); // DKK/MWh -> kr/kWh
-        });
-
-        const newRaw = [];
-        buckets.forEach((vals, h) => {
-            if (vals.length === 0) return;
-            newRaw.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
-        });
-
-        if (newRaw.length === 0) {
-            throw new Error(`Ingen priser for ${zone} ${todayStr} (modtog ${records.length} rækker)`);
-        }
-
-        rawSpotPrices = newRaw;
-        rebuildPrices();
-
-        const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-        document.getElementById('date-badge').innerText =
-            `${todayStr.split('-').reverse().join('/')} · ${zone} · opdateret ${time}`;
-    } catch (err) {
-        if (err.name === 'AbortError' || myRequest !== requestCounter) return; // Forældet kald
-        console.error('Elpris-fejl:', err);
-
-        if (rawSpotPrices.length > 0) {
-            document.getElementById('current-status-text').innerText =
-                `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
-            updateDashboard();
-            return;
-        }
-        document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
-        document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
-        return;
-    }
-
-    updateDashboard();
-}
-
-
 
         // ==================== DASHBOARD ====================
 
         function updateDashboard() {
             if (todaysPrices.length === 0) return;
 
-            const currentHour = new Date().getHours();
-            const currentObj = todaysPrices.find(p => p.hour === currentHour) || todaysPrices[0];
-            const pricesOnly = todaysPrices.map(p => p.price);
+            const isToday = selectedDay === 'today';
+            const now = new Date();
+            const currentHour = isToday ? now.getHours() : -1;
 
-            const minPrice = Math.min(...pricesOnly);
+            const pricesOnly = todaysPrices.map(p => p.price);
+            const minObj = todaysPrices.reduce((p, c) => c.price < p.price ? c : p, todaysPrices[0]);
             const maxPrice = Math.max(...pricesOnly);
+            const minPrice = Math.min(...pricesOnly);
             const avgPrice = pricesOnly.reduce((a, b) => a + b, 0) / pricesOnly.length;
 
-            const curVal = currentObj.price;
-            document.getElementById('current-price-val').innerText = curVal.toFixed(2);
-            document.getElementById('current-hour-label').innerText =
-                `Live pris kl. ${currentObj.hourStr}:00 - ${String((currentHour + 1) % 24).padStart(2, '0')}:00`;
+            const lowThreshold = minPrice + (maxPrice - minPrice) * 0.35;
+            const highThreshold = minPrice + (maxPrice - minPrice) * 0.70;
 
             const heroPanel = document.getElementById('hero-panel');
             const statusText = document.getElementById('current-status-text');
             const liveBadge = document.getElementById('live-badge');
             const livePing = document.getElementById('live-ping');
 
-            const lowThreshold = minPrice + (maxPrice - minPrice) * 0.35;
-            const highThreshold = minPrice + (maxPrice - minPrice) * 0.70;
+            if (isToday) {
+                const currentObj = todaysPrices.find(p => p.hour === currentHour) || todaysPrices[0];
+                const curVal = currentObj.price;
+                document.getElementById('current-price-val').innerText = curVal.toFixed(2);
+                document.getElementById('current-hour-label').innerText =
+                    `Live pris kl. ${currentObj.hourStr}:00 - ${String((currentHour + 1) % 24).padStart(2, '0')}:00`;
+                document.getElementById('stat-title').innerText = 'Døgnets nøgletal';
 
-            if (curVal <= lowThreshold) {
-                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-emerald relative overflow-hidden transition-all duration-500";
-                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold tracking-wide uppercase";
-                livePing.className = "w-2 h-2 rounded-full bg-emerald-400 animate-ping";
-                statusText.className = "text-base font-semibold text-emerald-400 flex items-center gap-2";
-                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Grønt lys: Strømmen er billig lige nu.`;
-            } else if (curVal <= highThreshold) {
-                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-amber relative overflow-hidden transition-all duration-500";
-                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold tracking-wide uppercase";
-                livePing.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
-                statusText.className = "text-base font-semibold text-amber-400 flex items-center gap-2";
-                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Middel pris: Fint til almindeligt forbrug, men vent med elbilen.`;
+                if (curVal <= lowThreshold) {
+                    setHeroTier('low', heroPanel, liveBadge, livePing, statusText);
+                    statusText.innerHTML = `${iconCheck()} Grønt lys: Strømmen er billig lige nu.`;
+                } else if (curVal <= highThreshold) {
+                    setHeroTier('mid', heroPanel, liveBadge, livePing, statusText);
+                    statusText.innerHTML = `${iconClock()} Middel pris: Fint til almindeligt forbrug, men vent med elbilen.`;
+                } else {
+                    setHeroTier('high', heroPanel, liveBadge, livePing, statusText);
+                    statusText.innerHTML = `${iconWarn()} Dyr spidsbelastning: Udskyd elbil, vask og opvask.`;
+                }
             } else {
-                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-rose relative overflow-hidden transition-all duration-500";
-                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold tracking-wide uppercase";
-                livePing.className = "w-2 h-2 rounded-full bg-rose-400 animate-ping";
-                statusText.className = "text-base font-semibold text-rose-400 flex items-center gap-2";
-                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg> Dyr spidsbelastning: Udskyd elbil, vask og opvask.`;
+                // Morgendagens priser: vis laveste pris som hovedtal, ingen live-farve
+                document.getElementById('current-price-val').innerText = minObj.price.toFixed(2);
+                document.getElementById('current-hour-label').innerText =
+                    `Billigste time i morgen kl. ${minObj.hourStr}:00 - ${String((minObj.hour + 1) % 24).padStart(2, '0')}:00`;
+                document.getElementById('stat-title').innerText = 'Morgendagens nøgletal';
+                setHeroTier('neutral', heroPanel, liveBadge, livePing, statusText);
+                statusText.innerHTML = `${iconClock()} Priser for i morgen. De er endelige, når auktionen er afsluttet.`;
             }
 
             document.getElementById('stat-min').innerText = `${minPrice.toFixed(2)} kr`;
@@ -407,8 +453,38 @@ async function fetchLivePrices() {
             document.getElementById('stat-max').innerText = `${maxPrice.toFixed(2)} kr`;
 
             calculateBestEvWindow();
-            updateHomeAssistant(lowThreshold);
+            updateHomeAssistant(lowThreshold, currentHour);
             renderBlockChart(currentHour, lowThreshold, highThreshold, maxPrice);
+        }
+
+        function setHeroTier(tier, heroPanel, liveBadge, livePing, statusText) {
+            const styles = {
+                low:     { glow: 'glow-emerald', c: 'emerald' },
+                mid:     { glow: 'glow-amber',   c: 'amber' },
+                high:    { glow: 'glow-rose',    c: 'rose' },
+                neutral: { glow: 'glow-emerald', c: 'slate' }
+            }[tier];
+
+            heroPanel.className = `glass-panel rounded-3xl p-6 sm:p-8 ${styles.glow} relative overflow-hidden transition-all duration-500`;
+            if (tier === 'neutral') {
+                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-500/10 border border-slate-500/20 text-slate-300 text-xs font-bold tracking-wide uppercase";
+                livePing.className = "w-2 h-2 rounded-full bg-slate-400";
+                statusText.className = "text-base font-semibold text-slate-300 flex items-center gap-2";
+            } else {
+                liveBadge.className = `inline-flex items-center gap-2 px-3 py-1 rounded-full bg-${styles.c}-500/10 border border-${styles.c}-500/20 text-${styles.c}-400 text-xs font-bold tracking-wide uppercase`;
+                livePing.className = `w-2 h-2 rounded-full bg-${styles.c}-400 animate-ping`;
+                statusText.className = `text-base font-semibold text-${styles.c}-400 flex items-center gap-2`;
+            }
+        }
+
+        function iconCheck() {
+            return `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+        }
+        function iconClock() {
+            return `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`;
+        }
+        function iconWarn() {
+            return `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>`;
         }
 
         function calculateBestEvWindow() {
@@ -440,14 +516,15 @@ async function fetchLivePrices() {
 
             const avgWindowPrice = minSum / hoursNeeded;
             const totalCost = avgWindowPrice * selectedEvKwh;
+            const dagTekst = selectedDay === 'tomorrow' ? 'i morgen' : 'i dag';
 
-            document.getElementById('ev-window-label').innerText = `Billigste ${hoursNeeded}-timers ladevindue i dag`;
+            document.getElementById('ev-window-label').innerText = `Billigste ${hoursNeeded}-timers ladevindue ${dagTekst}`;
             document.getElementById('ev-best-time').innerText = `Kl. ${startHourStr}:00 – ${endHourStr}:00`;
             document.getElementById('ev-cost-details').innerHTML =
                 `Estimeret pris for ${selectedEvKwh} kWh: <span class="font-bold text-white">${totalCost.toFixed(2)} kr</span> (gns. ${avgWindowPrice.toFixed(2)} kr/kWh)`;
         }
 
-        function updateHomeAssistant(lowThreshold) {
+        function updateHomeAssistant(lowThreshold, currentHour) {
             if (todaysPrices.length < 2) return;
 
             // Billigste 2 sammenhængende timer
@@ -465,17 +542,26 @@ async function fetchLivePrices() {
             document.getElementById('home-best-2h').innerText = `Bedste tid: Kl. ${start2h}:00 - ${end2h}:00`;
             document.getElementById('home-best-price').innerText = `${(min2h / 2).toFixed(2)} kr/kWh`;
 
-            // Næste billige time fra nu
-            const currentHour = new Date().getHours();
-            const upcomingGood = todaysPrices.find(p => p.hour >= currentHour && p.price <= lowThreshold);
-            if (upcomingGood) {
-                document.getElementById('home-next-good').innerText = upcomingGood.hour === currentHour
-                    ? `Lige nu (kl. ${upcomingGood.hourStr}:00)`
-                    : `Starter kl. ${upcomingGood.hourStr}:00`;
-                document.getElementById('home-next-price').innerText = `${upcomingGood.price.toFixed(2)} kr/kWh`;
+            // Næste billige time fra nu (kun for i dag)
+            if (selectedDay === 'today') {
+                const upcomingGood = todaysPrices.find(p => p.hour >= currentHour && p.price <= lowThreshold);
+                if (upcomingGood) {
+                    document.getElementById('home-next-good').innerText = upcomingGood.hour === currentHour
+                        ? `Lige nu (kl. ${upcomingGood.hourStr}:00)`
+                        : `Starter kl. ${upcomingGood.hourStr}:00`;
+                    document.getElementById('home-next-price').innerText = `${upcomingGood.price.toFixed(2)} kr/kWh`;
+                } else {
+                    document.getElementById('home-next-good').innerText = 'Ingen flere billige timer i dag';
+                    document.getElementById('home-next-price').innerText = 'Vent til i nat';
+                }
             } else {
-                document.getElementById('home-next-good').innerText = 'Ingen flere billige timer i dag';
-                document.getElementById('home-next-price').innerText = 'Vent til i nat';
+                const firstGood = todaysPrices.find(p => p.price <= lowThreshold);
+                document.getElementById('home-next-good').innerText = firstGood
+                    ? `Første billige time i morgen: kl. ${firstGood.hourStr}:00`
+                    : 'Ingen særligt billige timer i morgen';
+                document.getElementById('home-next-price').innerText = firstGood
+                    ? `${firstGood.price.toFixed(2)} kr/kWh`
+                    : '-- kr';
             }
 
             // Dyreste time
@@ -491,13 +577,11 @@ async function fetchLivePrices() {
 
             container.innerHTML = todaysPrices.map((item, idx) => {
                 const heightPercent = Math.max((item.price / chartCeiling) * 100, 8);
-                let colorClass = "bg-emerald-500 hover:bg-emerald-400";
 
-                if (item.price > highThreshold) {
-                    colorClass = "bg-rose-500 hover:bg-rose-400";
-                } else if (item.price > lowThreshold) {
-                    colorClass = "bg-amber-500 hover:bg-amber-400";
-                }
+                let tier = 'low';
+                if (item.price > highThreshold) tier = 'high';
+                else if (item.price > lowThreshold) tier = 'mid';
+                const c = TIER_COLORS[tier];
 
                 const isCurrent = item.hour === currentHour;
                 const isEvWindow = bestWindowIndices.includes(idx);
@@ -509,13 +593,14 @@ async function fetchLivePrices() {
                     borderStyle = "border-t-4 border-emerald-200 shadow-lg shadow-emerald-500/30";
                 }
 
+                // Tooltip har samme farve som blokken
                 return `
                     <div class="flex-1 flex flex-col items-center h-full justify-end group relative">
-                        <div class="absolute -top-9 hidden group-hover:flex flex-col items-center bg-slate-900 border border-slate-700 text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap z-30 shadow-xl">
+                        <div class="absolute -top-9 hidden group-hover:flex flex-col items-center bg-slate-900 border ${c.border} text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap z-30 shadow-xl">
                             <span>Kl. ${item.hourStr}:00</span>
-                            <span class="text-emerald-400">${item.price.toFixed(2)} kr/kWh</span>
+                            <span class="${c.text}">${item.price.toFixed(2)} kr/kWh</span>
                         </div>
-                        <div class="w-full rounded-t-sm transition-all duration-300 ${colorClass} ${borderStyle}" style="height: ${heightPercent}%;"></div>
+                        <div class="w-full rounded-t-sm transition-all duration-300 ${c.bar} ${borderStyle}" style="height: ${heightPercent}%;"></div>
                     </div>
                 `;
             }).join('');
@@ -532,17 +617,27 @@ async function fetchLivePrices() {
             updateDashboard();
         }
 
+        function setDay(day) {
+            selectedDay = day;
+            const btnToday = document.getElementById('btn-day-today');
+            const btnTomorrow = document.getElementById('btn-day-tomorrow');
+            const active = "px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
+            const inactive = "px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+            btnToday.className = day === 'today' ? active : inactive;
+            btnTomorrow.className = day === 'tomorrow' ? active : inactive;
+
+            // Skifter uden nyt API-kald, da dataene allerede er hentet
+            if (lastRecords.length > 0) applySelectedDay();
+        }
+
         function setZone(zone) {
             currentZone = zone;
             const btn1 = document.getElementById('btn-dk1');
             const btn2 = document.getElementById('btn-dk2');
-            if (zone === 'DK1') {
-                btn1.className = "px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
-                btn2.className = "px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
-            } else {
-                btn2.className = "px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
-                btn1.className = "px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
-            }
+            const active = "px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
+            const inactive = "px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+            btn1.className = zone === 'DK1' ? active : inactive;
+            btn2.className = zone === 'DK2' ? active : inactive;
             fetchLivePrices();
         }
 
@@ -562,7 +657,6 @@ async function fetchLivePrices() {
                 subText.innerText = "ekskl. afgift, tarif & tillæg";
             }
 
-            // Genberegn uden ny hentning
             if (rawSpotPrices.length > 0) {
                 rebuildPrices();
                 updateDashboard();
@@ -572,8 +666,9 @@ async function fetchLivePrices() {
         // ==================== START ====================
 
         fetchLivePrices();
-        setInterval(fetchLivePrices, 10 * 60 * 1000); // Henter nye data hvert 5. minut
-        setInterval(updateDashboard, 60 * 1000);     // Opdaterer aktuel time hvert minut
+        setInterval(fetchLivePrices, 10 * 60 * 1000); // Henter nye data hvert 10. minut
+        setInterval(() => { if (selectedDay === 'today') updateDashboard(); }, 60 * 1000); // Opdaterer aktuel time hvert minut
+        setInterval(() => { if (selectedDay === 'tomorrow') fetchLivePrices(); }, 30 * 60 * 1000); // Tjekker for morgendagens priser hvert 30. minut
     </script>
 </body>
 </html>

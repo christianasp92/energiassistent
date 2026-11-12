@@ -263,26 +263,54 @@
 
         // ==================== DATAHENTNING ====================
 
-       async function fetchLivePrices() {
+       // ==================== DATAHENTNING ====================
+
+const PRICE_CACHE_MS = 5 * 60 * 1000;   // Genbrug hentede data i 5 minutter pr. zone
+const priceCache = {};                  // nøgle: zone|dato -> { records, fetchedAt }
+let activeController = null;            // Det kald der er i gang
+let requestCounter = 0;                 // Bruges til at ignorere forældede svar
+
+async function fetchLivePrices() {
     const now = new Date();
     const todayStr = toIsoDate(now);
     const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
     const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
+    const zone = currentZone;
+    const cacheKey = `${zone}|${startStr}|${endStr}`;
 
-    const params = new URLSearchParams({
-        start: `${startStr}T00:00`,
-        end: `${endStr}T00:00`,
-        filter: JSON.stringify({ PriceArea: [currentZone] }),
-        sort: 'TimeDK asc',
-        limit: '1000'
-    });
-    const url = `https://energipriser.christianasp92.workers.dev/?${params.toString()}`;
+    const myRequest = ++requestCounter;
+
+    // Annuller det forrige kald, hvis brugeren har skiftet zone
+    if (activeController) activeController.abort();
+    activeController = new AbortController();
+
+    document.getElementById('date-badge').innerText = todayStr.split('-').reverse().join('/');
 
     try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const json = await response.json();
-        const records = json.records || [];
+        let records;
+        const cached = priceCache[cacheKey];
+
+        if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_MS) {
+            records = cached.records;
+        } else {
+            const params = new URLSearchParams({
+                start: `${startStr}T00:00`,
+                end: `${endStr}T00:00`,
+                filter: JSON.stringify({ PriceArea: [zone] }),
+                sort: 'TimeDK asc',
+                limit: '1000'
+            });
+            const url = `https://energipriser.christianasp92.workers.dev/?${params.toString()}`;
+
+            const response = await fetch(url, { signal: activeController.signal });
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const json = await response.json();
+            records = json.records || [];
+            priceCache[cacheKey] = { records, fetchedAt: Date.now() };
+        }
+
+        // Hvis brugeren har skiftet zone i mellemtiden, må svaret ikke vises
+        if (myRequest !== requestCounter) return;
 
         const buckets = Array.from({ length: 24 }, () => []);
         records.forEach(r => {
@@ -292,24 +320,27 @@
             buckets[h].push(r.DayAheadPriceDKK / 1000); // DKK/MWh -> kr/kWh
         });
 
-        rawSpotPrices = [];
+        const newRaw = [];
         buckets.forEach((vals, h) => {
             if (vals.length === 0) return;
-            rawSpotPrices.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
+            newRaw.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
         });
 
-        if (rawSpotPrices.length === 0) {
-            throw new Error(`Ingen priser for ${todayStr} (modtog ${records.length} rækker)`);
+        if (newRaw.length === 0) {
+            throw new Error(`Ingen priser for ${zone} ${todayStr} (modtog ${records.length} rækker)`);
         }
 
+        rawSpotPrices = newRaw;
         rebuildPrices();
+
         const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
         document.getElementById('date-badge').innerText =
-            `${todayStr.split('-').reverse().join('/')} · opdateret ${time}`;
+            `${todayStr.split('-').reverse().join('/')} · ${zone} · opdateret ${time}`;
     } catch (err) {
+        if (err.name === 'AbortError' || myRequest !== requestCounter) return; // Forældet kald
         console.error('Elpris-fejl:', err);
+
         if (rawSpotPrices.length > 0) {
-            // Behold de sidste gode priser
             document.getElementById('current-status-text').innerText =
                 `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
             updateDashboard();
@@ -322,6 +353,7 @@
 
     updateDashboard();
 }
+
 
 
         // ==================== DASHBOARD ====================

@@ -308,12 +308,19 @@
                 document.getElementById('date-badge').innerText =
                     `${todayStr.split('-').reverse().join('/')} · opdateret ${time}`;
             } catch (err) {
-                console.error('Elpris-fejl:', err);
-                rawSpotPrices = [];
-                todaysPrices = [];
-                document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
-                document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
-                return;
+                } catch (err) {
+    console.error('Elpris-fejl:', err);
+    // Behold de sidste gode priser, hvis der er nogen
+    if (rawSpotPrices.length > 0) {
+        document.getElementById('current-status-text').innerText =
+            `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
+        updateDashboard();
+        return;
+    }
+    document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
+    document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
+    return;
+
             }
 
             updateDashboard();
@@ -535,7 +542,7 @@
         // ==================== START ====================
 
         fetchLivePrices();
-        setInterval(fetchLivePrices, 5 * 60 * 1000); // Henter nye data hvert 5. minut
+        setInterval(fetchLivePrices, 10 * 60 * 1000); // Henter nye data hvert 5. minut
         setInterval(updateDashboard, 60 * 1000);     // Opdaterer aktuel time hvert minut
     </script>
 </body>

@@ -667,7 +667,7 @@
 
         fetchLivePrices();
         setInterval(fetchLivePrices, 10 * 60 * 1000); // Henter nye data hvert 10. minut
-        setInterval(() => { if (selectedDay === 'today') updateDashboard(); }, 60 * 1000); // Opdaterer aktuel time hvert minut
+        setInterval(() => { if (selectedDay === 'today') updateDashboard(); }, 30 * 60 * 1000); // Opdaterer aktuel time hvert 30. minut
         setInterval(() => { if (selectedDay === 'tomorrow') fetchLivePrices(); }, 30 * 60 * 1000); // Tjekker for morgendagens priser hvert 30. minut
     </script>
 </body>

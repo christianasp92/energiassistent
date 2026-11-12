@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EnergiAssistent.com - Live elpriser & elbil-optimering</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0A0D14; color: #F8FAFC; }
+        .glass-panel { background: rgba(15, 20, 32, 0.75); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.08); }
+        .glow-emerald { box-shadow: 0 0 35px -5px rgba(16, 185, 129, 0.25); }
+        .glow-amber { box-shadow: 0 0 35px -5px rgba(245, 158, 11, 0.25); }
+        .glow-rose { box-shadow: 0 0 35px -5px rgba(244, 63, 94, 0.25); }
+    </style>
+</head>
+<body class="min-h-screen pb-12 antialiased">
+
+    <!-- TOP BAR -->
+    <header class="border-b border-slate-800/80 bg-[#0F1420]/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <svg class="w-6 h-6 text-slate-950" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                </div>
+                <div>
+                    <span class="text-xl font-black tracking-tight text-white">EnergiAssistent</span>
+                    <span class="text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 ml-1.5">.com</span>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 sm:gap-3">
+                <!-- Toggle for Afgifter & Moms -->
+                <button id="btn-tax" onclick="toggleTax()" class="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-slate-300 hover:border-slate-700 transition">
+                    <span id="tax-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    <span id="tax-label">Inkl. afgifter & moms</span>
+                </button>
+
+                <!-- Region vælger -->
+                <div class="flex items-center gap-1 bg-slate-900/90 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
+                    <button id="btn-dk1" onclick="setZone('DK1')" class="px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition">DK1 (Vest)</button>
+                    <button id="btn-dk2" onclick="setZone('DK2')" class="px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition">DK2 (Øst)</button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto px-4 sm:px-6 pt-8 space-y-6">
+
+        <!-- PRIMÆR FOKUS: NUVÆRENDE PRIS HERO -->
+        <section id="hero-panel" class="glass-panel rounded-3xl p-6 sm:p-8 glow-emerald relative overflow-hidden transition-all duration-500">
+            <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+                
+                <div class="space-y-3">
+                    <div id="live-badge" class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold tracking-wide uppercase">
+                        <span id="live-ping" class="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
+                        <span id="current-hour-label">Henter live priser...</span>
+                    </div>
+
+                    <!-- Kæmpe nuværende pris -->
+                    <div class="flex items-baseline gap-3">
+                        <span id="current-price-val" class="text-5xl sm:text-7xl font-black text-white tracking-tight">--.--</span>
+                        <div class="text-slate-400">
+                            <span class="text-xl font-bold block text-slate-300">kr / kWh</span>
+                            <span id="sub-tax-text" class="text-xs">inkl. moms & est. afgift</span>
+                        </div>
+                    </div>
+
+                    <p id="current-status-text" class="text-base font-semibold text-emerald-400 flex items-center gap-2">
+                        Forbinder til Energinet DataHub...
+                    </p>
+                </div>
+
+                <!-- NEDTONET STATISTIK (Høj, Lav, Gns) -->
+                <div class="w-full md:w-auto bg-slate-950/40 p-4 rounded-2xl border border-slate-800/60 text-slate-400 text-xs space-y-2 shrink-0">
+                    <span class="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Døgnets nøgletal</span>
+                    <div class="flex md:flex-col justify-between gap-4 md:gap-1.5">
+                        <div class="flex items-center justify-between gap-6">
+                            <span>Laveste i dag:</span>
+                            <span id="stat-min" class="font-bold text-slate-300">-- kr</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-6">
+                            <span>Gennemsnit:</span>
+                            <span id="stat-avg" class="font-bold text-slate-300">-- kr</span>
+                        </div>
+                        <div class="flex items-center justify-between gap-6">
+                            <span>Højeste spids:</span>
+                            <span id="stat-max" class="font-bold text-slate-300">-- kr</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+        <!-- BLOCK-BASERET TIMEGRAF -->
+        <section class="glass-panel rounded-3xl p-6 space-y-4">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        Timepriser i dag
+                        <span id="date-badge" class="text-xs font-normal text-slate-400 bg-slate-800/80 px-2.5 py-0.5 rounded-full"></span>
+                    </h2>
+                    <p class="text-xs text-slate-400">Hver søjle er 1 time. Hvid kant = Nuværende time. Grøn glød = Bedste ladevindue.</p>
+                </div>
+                <div class="flex items-center gap-3 text-xs text-slate-400">
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-emerald-500"></span> Billig</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-amber-500"></span> Normal</span>
+                    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-rose-500"></span> Dyr</span>
+                </div>
+            </div>
+
+            <!-- Custom HTML/CSS Block Chart -->
+            <div id="block-chart" class="h-56 flex items-end justify-between gap-1 sm:gap-1.5 pt-10 pb-2 px-1 border-b border-slate-800">
+                <div class="w-full text-center text-xs text-slate-500 pb-20">Indlæser live data fra Nord Pool / Energinet...</div>
+            </div>
+            
+            <div class="flex justify-between text-[11px] text-slate-500 font-medium px-1">
+                <span>00:00</span>
+                <span>06:00</span>
+                <span>12:00</span>
+                <span>18:00</span>
+                <span>23:00</span>
+            </div>
+        </section>
+
+        <!-- ELBIL BEREGNER & HUSHOLDNINGS-ASSISTENT -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            
+            <!-- LIVE ELBIL BEREGNER -->
+            <div class="glass-panel rounded-3xl p-6 space-y-5">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-white">Hvornår skal elbilen lades?</h3>
+                        <p class="text-xs text-slate-400">Beregnet ud fra dagens rigtige timepriser (11 kW lader)</p>
+                    </div>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div>
+                        <label class="text-slate-400 mb-1.5 block">Vælg ladebehov:</label>
+                        <div class="grid grid-cols-3 gap-2">
+                            <button onclick="setEvKwh(22, this)" class="ev-btn p-2.5 rounded-xl bg-slate-800 border border-slate-700 font-semibold text-white transition">22 kWh (2 t)</button>
+                            <button onclick="setEvKwh(44, this)" class="ev-btn active p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500 font-semibold text-emerald-400 transition">44 kWh (4 t)</button>
+                            <button onclick="setEvKwh(66, this)" class="ev-btn p-2.5 rounded-xl bg-slate-800 border border-slate-700 font-semibold text-white transition">66 kWh (6 t)</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 space-y-1">
+                    <span id="ev-window-label" class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Billigste sammenhængende ladevindue</span>
+                    <div id="ev-best-time" class="text-xl font-extrabold text-white">Beregner...</div>
+                    <p id="ev-cost-details" class="text-xs text-slate-400">Henter timepriser...</p>
+                </div>
+            </div>
+
+            <!-- HUSHOLDNINGS-ASSISTENT -->
+            <div class="glass-panel rounded-3xl p-6 space-y-5">
+                <div class="flex items-center gap-3">
+                    <div class="p-2.5 rounded-xl bg-teal-500/10 text-teal-400 border border-teal-500/20">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-white">Husholdnings-Assistent</h3>
+                        <p class="text-xs text-slate-400">Live anbefalinger til dine apparater i dag</p>
+                    </div>
+                </div>
+
+                <div class="space-y-3 text-xs">
+                    <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex justify-between items-center">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Billigste 2 timer i dag (Vask/Opvask)</span>
+                            <span id="home-best-2h" class="text-slate-400 text-[11px]">Beregner bedste tidspunkt...</span>
+                        </div>
+                        <span id="home-best-price" class="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">-- kr</span>
+                    </div>
+
+                    <div class="p-3.5 rounded-xl bg-slate-900/80 border border-slate-800 flex justify-between items-center">
+                        <div>
+                            <span class="font-semibold text-slate-200 block">Næste billige vindue fra nu</span>
+                            <span id="home-next-good" class="text-slate-400 text-[11px]">Tjekker kommende timer...</span>
+                        </div>
+                        <span id="home-next-price" class="px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-bold">-- kr</span>
+                    </div>
+
+                    <div class="p-3.5 rounded-xl bg-rose-500/5 border border-rose-500/20 flex justify-between items-center">
+                        <div>
+                            <span class="font-semibold text-rose-200 block">Undgå tungt elforbrug</span>
+                            <span id="home-worst-time" class="text-rose-400/80 text-[11px]">Finder dagens dyreste time...</span>
+                        </div>
+                        <span id="home-worst-price" class="px-2.5 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 font-bold">-- kr</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+    <!-- LIVE ENERGINET API SCRIPT -->
+    <script>
+        let currentZone = 'DK1';
+        let includeTaxes = true;
+        let selectedEvKwh = 44; // 4 timer ved 11kW
+        let todaysPrices = []; // Array af objekter: { hour: 0..23, price: DKK/kWh }
+        let bestWindowIndices = [];
+
+        // Estimeret elafgift + transporttarif inkl. moms (ca. 1.15 kr/kWh)
+        const ESTIMATED_TAX_AND_TARIFF = 1.15;
+
+        async function fetchLivePrices() {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const todayStr = `${year}-${month}-${day}`;
+
+            document.getElementById('date-badge').innerText = `${day}/${month}/${year}`;
+
+            // Energinet DataHub API (Elspotprices)
+            const filter = encodeURIComponent(JSON.stringify({ PriceArea: [currentZone] }));
+            const url = `https://api.energidataservice.dk/dataset/Elspotprices?start=${todayStr}T00:00&filter=${filter}&sort=HourDK%20ASC&limit=48`;
+
+            try {
+                const response = await fetch(url);
+                const data = await response.json();
+
+                if (!data.records || data.records.length === 0) {
+                    throw new Error("Ingen data modtaget");
+                }
+
+                // Filtrer kun dagens 24 timer (HourDK starter med todayStr)
+                const todayRecords = data.records.filter(r => r.HourDK.startsWith(todayStr));
+
+                todaysPrices = todayRecords.map(record => {
+                    const hourInt = parseInt(record.HourDK.substring(11, 13), 10);
+                    // SpotPriceDKK er i DKK per MWh -> divider med 1000 for DKK/kWh, gang med 1.25 for moms
+                    const spotWithVat = (record.SpotPriceDKK / 1000) * 1.25;
+                    const finalPrice = includeTaxes ? (spotWithVat + ESTIMATED_TAX_AND_TARIFF) : spotWithVat;
+
+                    return {
+                        hour: hourInt,
+                        hourStr: String(hourInt).padStart(2, '0'),
+                        price: Math.max(0, finalPrice)
+                    };
+                });
+
+                updateDashboard();
+
+            } catch (error) {
+                console.error("Fejl ved hentning af elpriser:", error);
+                document.getElementById('current-status-text').innerText = "Kunne ikke hente live priser lige nu. Prøv at opdatere siden.";
+            }
+        }
+
+        function updateDashboard() {
+            if (todaysPrices.length === 0) return;
+
+            const currentHour = new Date().getHours();
+            const currentObj = todaysPrices.find(p => p.hour === currentHour) || todaysPrices[0];
+            const pricesOnly = todaysPrices.map(p => p.price);
+
+            const minPrice = Math.min(...pricesOnly);
+            const maxPrice = Math.max(...pricesOnly);
+            const avgPrice = pricesOnly.reduce((a, b) => a + b, 0) / pricesOnly.length;
+
+            // 1. Opdater Hero (Nuværende pris)
+            const curVal = currentObj.price;
+            document.getElementById('current-price-val').innerText = curVal.toFixed(2);
+            document.getElementById('current-hour-label').innerText = `Live pris kl. ${currentObj.hourStr}:00 - ${String((currentHour + 1) % 24).padStart(2, '0')}:00`;
+
+            const heroPanel = document.getElementById('hero-panel');
+            const statusText = document.getElementById('current-status-text');
+            const liveBadge = document.getElementById('live-badge');
+            const livePing = document.getElementById('live-ping');
+
+            // Farve-logik relativt til dagens niveau
+            const lowThreshold = minPrice + (maxPrice - minPrice) * 0.35;
+            const highThreshold = minPrice + (maxPrice - minPrice) * 0.70;
+
+            if (curVal <= lowThreshold) {
+                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-emerald relative overflow-hidden transition-all duration-500";
+                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-bold tracking-wide uppercase";
+                livePing.className = "w-2 h-2 rounded-full bg-emerald-400 animate-ping";
+                statusText.className = "text-base font-semibold text-emerald-400 flex items-center gap-2";
+                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Grønt lys: Strømmen er billig lige nu.`;
+            } else if (curVal <= highThreshold) {
+                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-amber relative overflow-hidden transition-all duration-500";
+                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold tracking-wide uppercase";
+                livePing.className = "w-2 h-2 rounded-full bg-amber-400 animate-ping";
+                statusText.className = "text-base font-semibold text-amber-400 flex items-center gap-2";
+                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Middel pris: Fint til almindeligt forbrug, men vent med elbilen.`;
+            } else {
+                heroPanel.className = "glass-panel rounded-3xl p-6 sm:p-8 glow-rose relative overflow-hidden transition-all duration-500";
+                liveBadge.className = "inline-flex items-center gap-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold tracking-wide uppercase";
+                livePing.className = "w-2 h-2 rounded-full bg-rose-400 animate-ping";
+                statusText.className = "text-base font-semibold text-rose-400 flex items-center gap-2";
+                statusText.innerHTML = `<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg> Dyr spidsbelastning: Udskyd elbil, vask og opvask.`;
+            }
+
+            // 2. Opdater nedtonede nøgletal
+            document.getElementById('stat-min').innerText = `${minPrice.toFixed(2)} kr`;
+            document.getElementById('stat-avg').innerText = `${avgPrice.toFixed(2)} kr`;
+            document.getElementById('stat-max').innerText = `${maxPrice.toFixed(2)} kr`;
+
+            // 3. Beregn bedste Elbil-vindue
+            calculateBestEvWindow();
+
+            // 4. Opdater Husholdnings-assistent
+            updateHomeAssistant(lowThreshold, maxPrice);
+
+            // 5. Tegn Block-grafen
+            renderBlockChart(currentHour, lowThreshold, highThreshold, maxPrice);
+        }
+
+        function calculateBestEvWindow() {
+            const hoursNeeded = Math.round(selectedEvKwh / 11); // 11 kW ladeboks
+            if (todaysPrices.length < hoursNeeded) return;
+
+            let minSum = Infinity;
+            let bestStartIdx = 0;
+
+            for (let i = 0; i <= todaysPrices.length - hoursNeeded; i++) {
+                let sum = 0;
+                for (let j = 0; j < hoursNeeded; j++) {
+                    sum += todaysPrices[i + j].price;
+                }
+                if (sum < minSum) {
+                    minSum = sum;
+                    bestStartIdx = i;
+                }
+            }
+
+            bestWindowIndices = [];
+            for (let j = 0; j < hoursNeeded; j++) {
+                bestWindowIndices.push(bestStartIdx + j);
+            }
+
+            const startHourStr = todaysPrices[bestStartIdx].hourStr;
+            const endHourNum = (todaysPrices[bestStartIdx + hoursNeeded - 1].hour + 1) % 24;
+            const endHourStr = String(endHourNum).padStart(2, '0');
+
+            const avgWindowPrice = minSum / hoursNeeded;
+            const totalCost = avgWindowPrice * selectedEvKwh;
+
+            document.getElementById('ev-window-label').innerText = `Billigste ${hoursNeeded}-timers ladevindue i dag`;
+            document.getElementById('ev-best-time').innerText = `Kl. ${startHourStr}:00 – ${endHourStr}:00`;
+            document.getElementById('ev-cost-details').innerHTML = `Estimeret pris for ${selectedEvKwh} kWh: <span class="font-bold text-white">${totalCost.toFixed(2)} DKK</span> (gns. ${avgWindowPrice.toFixed(2)} kr/kWh)`;
+        }
+
+        function updateHomeAssistant(lowThreshold, maxPrice) {
+            // Billigste 2 sammenhængende timer
+            let min2h = Infinity;
+            let best2hIdx = 0;
+            for (let i = 0; i < todaysPrices.length - 1; i++) {
+                const sum = todaysPrices[i].price + todaysPrices[i+1].price;
+                if (sum < min2h) {
+                    min2h = sum;
+                    best2hIdx = i;
+                }
+            }
+            const start2h = todaysPrices[best2hIdx].hourStr;
+            const end2h = String((todaysPrices[best2hIdx + 1].hour + 1) % 24).padStart(2, '0');
+            document.getElementById('home-best-2h').innerText = `Bedste tid: Kl. ${start2h}:00 - ${end2h}:00`;
+            document.getElementById('home-best-price').innerText = `${(min2h / 2).toFixed(2)} kr/kWh`;
+
+            // Næste billige time fra nu
+            const currentHour = new Date().getHours();
+            const upcomingGood = todaysPrices.find(p => p.hour >= currentHour && p.price <= lowThreshold);
+            if (upcomingGood) {
+                document.getElementById('home-next-good').innerText = upcomingGood.hour === currentHour 
+                    ? `Lige nu (kl. ${upcomingGood.hourStr}:00)` 
+                    : `Starter kl. ${upcomingGood.hourStr}:00`;
+                document.getElementById('home-next-price').innerText = `${upcomingGood.price.toFixed(2)} kr/kWh`;
+            } else {
+                document.getElementById('home-next-good').innerText = `Ingen flere billige timer i dag`;
+                document.getElementById('home-next-price').innerText = `Vent til i nat`;
+            }
+
+            // Dyreste time i dag
+            const worstObj = todaysPrices.reduce((prev, curr) => (curr.price > prev.price) ? curr : prev, todaysPrices[0]);
+            const worstEnd = String((worstObj.hour + 1) % 24).padStart(2, '0');
+            document.getElementById('home-worst-time').innerText = `Spidsbelastning: Kl. ${worstObj.hourStr}:00 - ${worstEnd}:00`;
+            document.getElementById('home-worst-price').innerText = `${worstObj.price.toFixed(2)} kr/kWh`;
+        }
+
+        function renderBlockChart(currentHour, lowThreshold, highThreshold, maxPrice) {
+            const container = document.getElementById('block-chart');
+            const chartCeiling = Math.max(maxPrice * 1.1, 1.5);
+
+            container.innerHTML = todaysPrices.map((item, idx) => {
+                const heightPercent = Math.max((item.price / chartCeiling) * 100, 8);
+                let colorClass = "bg-emerald-500 hover:bg-emerald-400";
+                
+                if (item.price > highThreshold) {
+                    colorClass = "bg-rose-500 hover:bg-rose-400";
+                } else if (item.price > lowThreshold) {
+                    colorClass = "bg-amber-500 hover:bg-amber-400";
+                }
+
+                const isCurrent = item.hour === currentHour;
+                const isEvWindow = bestWindowIndices.includes(idx);
+
+                let borderStyle = "";
+                if (isCurrent) {
+                    borderStyle = "ring-2 ring-white z-10";
+                } else if (isEvWindow) {
+                    borderStyle = "border-t-4 border-emerald-200 shadow-lg shadow-emerald-500/30";
+                }
+
+                return `
+                    <div class="flex-1 flex flex-col items-center h-full justify-end group relative">
+                        <div class="absolute -top-9 hidden group-hover:flex flex-col items-center bg-slate-900 border border-slate-700 text-white text-[10px] py-1 px-2 rounded-lg font-bold whitespace-nowrap z-30 shadow-xl">
+                            <span>Kl. ${item.hourStr}:00</span>
+                            <span class="text-emerald-400">${item.price.toFixed(2)} kr/kWh</span>
+                        </div>
+                        <div class="w-full rounded-t-sm transition-all duration-300 ${colorClass} ${borderStyle}" style="height: ${heightPercent}%;"></div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function setEvKwh(kwh, btn) {
+            selectedEvKwh = kwh;
+            document.querySelectorAll('.ev-btn').forEach(b => {
+                b.className = "ev-btn p-2.5 rounded-xl bg-slate-800 border border-slate-700 font-semibold text-white transition";
+            });
+            btn.className = "ev-btn active p-2.5 rounded-xl bg-emerald-500/20 border border-emerald-500 font-semibold text-emerald-400 transition";
+            updateDashboard();
+        }
+
+        function setZone(zone) {
+            currentZone = zone;
+            const btn1 = document.getElementById('btn-dk1');
+            const btn2 = document.getElementById('btn-dk2');
+            if (zone === 'DK1') {
+                btn1.className = "px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
+                btn2.className = "px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+            } else {
+                btn2.className = "px-2.5 sm:px-3 py-1.5 rounded-lg bg-slate-800 text-emerald-400 border border-slate-700 transition";
+                btn1.className = "px-2.5 sm:px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition";
+            }
+            fetchLivePrices();
+        }
+
+        function toggleTax() {
+            includeTaxes = !includeTaxes;
+            const dot = document.getElementById('tax-dot');
+            const label = document.getElementById('tax-label');
+            const subText = document.getElementById('sub-tax-text');
+
+            if (includeTaxes) {
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+                label.innerText = "Inkl. afgifter & moms";
+                subText.innerText = "inkl. moms & est. afgift";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-slate-500";
+                label.innerText = "Kun rå spotpris + moms";
+                subText.innerText = "ekskl. elafgift & tarif";
+            }
+            fetchLivePrices();
+        }
+
+        // Start hentning af live data med det samme
+        fetchLivePrices();
+    </script>
+</body>
+</html>

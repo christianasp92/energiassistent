@@ -266,22 +266,27 @@
         async function fetchLivePrices() {
             const now = new Date();
             const todayStr = toIsoDate(now);
-            const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-            const tomorrowStr = toIsoDate(tomorrow);
+            const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
+            const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
 
-            document.getElementById('date-badge').innerText = todayStr.split('-').reverse().join('/');
-
-            const filter = encodeURIComponent(JSON.stringify({ PriceArea: [currentZone] }));
-            const url = `https://api.energidataservice.dk/dataset/DayAheadPrices?start=${todayStr}T00:00&end=${tomorrowStr}T00:00&filter=${filter}&sort=TimeDK%20asc&limit=500`;
+            const params = new URLSearchParams({
+                start: `${startStr}T00:00`,
+                end: `${endStr}T00:00`,
+                filter: JSON.stringify({ PriceArea: [currentZone] }),
+                sort: 'TimeDK asc',
+                limit: '1000'
+            });
+            const url = `https://api.energidataservice.dk/dataset/DayAheadPrices?${params.toString()}`;
 
             try {
-                const response = await fetch(url, { cache: 'no-store' });
+                const response = await fetch(url, { method: 'GET', mode: 'cors' });
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 const json = await response.json();
+                const records = json.records || [];
 
-                // Samler 15-minutters priser til 24 timegennemsnit
+                // Kun dagens danske timer (filtreret på dansk tid)
                 const buckets = Array.from({ length: 24 }, () => []);
-                (json.records || []).forEach(r => {
+                records.forEach(r => {
                     if (!r.TimeDK || !r.TimeDK.startsWith(todayStr)) return;
                     if (r.DayAheadPriceDKK == null) return;
                     const h = Number(r.TimeDK.substring(11, 13));
@@ -291,19 +296,23 @@
                 rawSpotPrices = [];
                 buckets.forEach((vals, h) => {
                     if (vals.length === 0) return;
-                    const spot = vals.reduce((a, b) => a + b, 0) / vals.length;
-                    rawSpotPrices.push({ hour: h, spot });
+                    rawSpotPrices.push({ hour: h, spot: vals.reduce((a, b) => a + b, 0) / vals.length });
                 });
 
-                if (rawSpotPrices.length === 0) throw new Error('Ingen priser for i dag endnu');
+                if (rawSpotPrices.length === 0) {
+                    throw new Error(`Ingen priser for ${todayStr} (modtog ${records.length} rækker)`);
+                }
 
                 rebuildPrices();
+                const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
+                document.getElementById('date-badge').innerText =
+                    `${todayStr.split('-').reverse().join('/')} · opdateret ${time}`;
             } catch (err) {
-                console.error('Kunne ikke hente elpriser:', err);
+                console.error('Elpris-fejl:', err);
                 rawSpotPrices = [];
                 todaysPrices = [];
                 document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
-                document.getElementById('current-status-text').innerText = 'Prisdata er midlertidigt utilgængelig. Prøv igen senere.';
+                document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
                 return;
             }
 
@@ -526,8 +535,8 @@
         // ==================== START ====================
 
         fetchLivePrices();
-        // Opdater hvert 5. minut, så time og pris følger med
-        setInterval(fetchLivePrices, 5 * 60 * 1000);
+        setInterval(fetchLivePrices, 5 * 60 * 1000); // Henter nye data hvert 5. minut
+        setInterval(updateDashboard, 60 * 1000);     // Opdaterer aktuel time hvert minut
     </script>
 </body>
 </html>

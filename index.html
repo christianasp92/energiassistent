@@ -229,6 +229,8 @@
         // Primær kilde: Nord Pool Data Portal (day-ahead). Fallback: din Worker (Energinet).
         const NORDPOOL_URL = 'https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices';
         const WORKER_URL = 'https://energipriser.christianasp92.workers.dev/';
+        // Browser-kald direkte til Nord Pool fejler ofte på CORS. Standard: gå via din Worker (worker.js).
+        const USE_DIRECT_NORDPOOL = false;
         const USE_WORKER_FALLBACK = true;
 
         // Day-ahead priser er endelige, når de er offentliggjort, så en komplet dag hentes KUN én gang
@@ -469,15 +471,8 @@ let priceSourceInfo = null;     // { source, fetchedAt } for dagen der vises
 
         // ---- Reserve: din Worker (Energinet) ----
         async function fetchWorker(dateStr) {
-            const params = new URLSearchParams({
-                start: `${dateStr}T00:00`,
-                end: `${addDays(dateStr, 1)}T00:00`,
-                filter: JSON.stringify({ PriceArea: ['DK1', 'DK2'] }),
-                sort: 'TimeDK asc',
-                limit: '500'
-            });
-            const res = await fetch(`${WORKER_URL}?${params}`);
-            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const res = await fetch(`${WORKER_URL}?date=${dateStr}`);
+            if (!res.ok) throw new Error(`Worker HTTP ${res.status}`);
             const json = await res.json();
             return (json.records || []).filter(r => r.TimeDK && r.TimeDK.startsWith(dateStr) && r.DayAheadPriceDKK != null);
         }
@@ -497,13 +492,14 @@ let priceSourceInfo = null;     // { source, fetchedAt } for dagen der vises
                     let records = null;
                     let source = 'Nord Pool';
                     try {
+                        if (!USE_DIRECT_NORDPOOL) throw new Error('direkte Nord Pool slået fra');
                         records = await fetchNordPool(dateStr);
                     } catch (err) {
                         if (err instanceof RateLimitError) throw err;   // Respektér pausen, prøv ikke andre veje
                         console.warn('Nord Pool fejlede:', err.message);
-                        if (!USE_WORKER_FALLBACK) throw err;
+                        if (!USE_WORKER_FALLBACK && USE_DIRECT_NORDPOOL) throw err;
                         records = await fetchWorker(dateStr);
-                        source = 'Energinet';
+                        source = 'Worker';
                     }
                     registerSuccess();
                     const entry = {

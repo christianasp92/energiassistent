@@ -224,9 +224,21 @@
 
         const MOMS_FAKTOR = 1.25;
         const EV_KW = 11;
-        const PRICE_CACHE_MS = 5 * 60 * 1000;
-        const FETCH_INTERVAL_MS = 10 * 60 * 1000;
+
+        // ---- Datakilder og kaldbegrænsning ----
+        // Primær kilde: Nord Pool Data Portal (day-ahead). Fallback: din Worker (Energinet).
+        const NORDPOOL_URL = 'https://dataportal-api.nordpoolgroup.com/api/DayAheadPrices';
         const WORKER_URL = 'https://energipriser.christianasp92.workers.dev/';
+        const USE_WORKER_FALLBACK = true;
+
+        // Day-ahead priser er endelige, når de er offentliggjort, så en komplet dag hentes KUN én gang
+        // og gemmes i localStorage (deles mellem faner og genindlæsninger).
+        const CACHE_PREFIX = 'ea_prices_v1_';
+        const RETRY_MS = 15 * 60 * 1000;               // Min. tid mellem forsøg, når en dag mangler/er ufuldstændig
+        const CHECK_INTERVAL_MS = 15 * 60 * 1000;      // Hvor ofte siden tjekker, om der er noget at hente (oftest ingenting)
+        const BACKOFF_BASE_MS = 2 * 60 * 1000;         // Første pause efter en fejl, fordobles ved gentagne fejl
+        const BACKOFF_MAX_MS = 60 * 60 * 1000;         // Aldrig længere pause end 1 time
+        const TOMORROW_PUBLISH_MINUTES = 12 * 60 + 45; // Morgendagens priser kommer ca. kl. 12.45 dansk tid
 
         // Farver til blokke og tooltips (skal matche Tailwind-klasserne)
         const TIER_COLORS = {
@@ -246,7 +258,8 @@
         let todaysPrices = [];          // Endelige timepriser for valgt zone og dag
         let bestWindowIndices = [];
 
-        const priceCache = {};          // nøgle: start|slut -> { records, fetchedAt }
+        let loadedDate = '';            // Dato (Københavns tid) som visningen sidst blev bygget til
+let priceSourceInfo = null;     // { source, fetchedAt } for dagen der vises
         let requestCounter = 0;
 
         // ==================== HJÆLPEFUNKTIONER ====================
@@ -256,9 +269,7 @@
         }
 
         function getTargetDateStr() {
-            const now = new Date();
-            const offset = selectedDay === 'tomorrow' ? 1 : 0;
-            return toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset));
+            return dkDateOffset(selectedDay === 'tomorrow' ? 1 : 0);
         }
 
         function getNetworkTariff(hour) {
@@ -308,6 +319,7 @@
 
         // Vælger zone og dag ud fra de gemte records og opdaterer visningen (ingen nyt kald)
         function applySelectedDay() {
+            updateBadge();
             const dateStr = getTargetDateStr();
             const newRaw = buildHourlySpot(lastRecords, currentZone, dateStr);
 
@@ -337,62 +349,232 @@
 
         // ==================== DATAHENTNING ====================
 
-        // Henter begge områder samtidig i ét kald (i dag og i morgen er med i datasættet)
-        async function fetchLivePrices() {
-            const now = new Date();
-            const startStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1));
-            const endStr = toIsoDate(new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2));
-            const key = `${startStr}|${endStr}`;
+        // ---- Tid i Danmark (uafhængigt af brugerens egen tidszone) ----
+        const dkFmt = new Intl.DateTimeFormat('sv-SE', {
+            timeZone: 'Europe/Copenhagen', year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        });
 
-            const myRequest = ++requestCounter;
+        function dkParts(date = new Date()) {
+            const p = {};
+            dkFmt.formatToParts(date).forEach(x => { if (x.type !== 'literal') p[x.type] = x.value; });
+            return {
+                dateStr: `${p.year}-${p.month}-${p.day}`,
+                hour: Number(p.hour),
+                minute: Number(p.minute),
+                timeDK: `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`
+            };
+        }
 
+        function addDays(dateStr, n) {
+            const [y, m, d] = dateStr.split('-').map(Number);
+            return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+        }
+
+        function dkDateOffset(offset) {
+            return addDays(dkParts().dateStr, offset);
+        }
+
+        // ---- Cache (localStorage med hukommelse som reserve) ----
+        const memStore = {};
+        const inflight = {};
+        let failCount = 0;
+        let backoffUntilMem = 0;
+
+        function storeGet(key) {
+            if (key in memStore) return memStore[key];
             try {
-                let records;
-                const cached = priceCache[key];
+                const raw = localStorage.getItem(key);
+                if (raw) { memStore[key] = JSON.parse(raw); return memStore[key]; }
+            } catch (e) { /* localStorage ikke tilgængelig */ }
+            return null;
+        }
 
-                if (cached && Date.now() - cached.fetchedAt < PRICE_CACHE_MS) {
-                    records = cached.records;
-                } else {
-                    const params = new URLSearchParams({
-                        start: `${startStr}T00:00`,
-                        end: `${endStr}T00:00`,
-                        filter: JSON.stringify({ PriceArea: ['DK1', 'DK2'] }),
-                        sort: 'TimeDK asc',
-                        limit: '2000'
-                    });
-                    const url = `${WORKER_URL}?${params.toString()}`;
+        function storeSet(key, value) {
+            memStore[key] = value;
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* ignorer */ }
+        }
 
-                    const response = await fetch(url);
-                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-                    const json = await response.json();
-                    records = json.records || [];
-                    priceCache[key] = { records, fetchedAt: Date.now() };
-                }
+        function pruneCache() {
+            try {
+                const keep = new Set([dkDateOffset(0), dkDateOffset(1)]);
+                Object.keys(localStorage)
+                    .filter(k => k.startsWith(CACHE_PREFIX) && !keep.has(k.slice(CACHE_PREFIX.length)))
+                    .forEach(k => localStorage.removeItem(k));
+            } catch (e) { /* ignorer */ }
+        }
 
-                // Hvis et nyere kald er startet i mellemtiden, vis ikke dette svar
-                if (myRequest !== requestCounter) return;
+        function getBackoffUntil() {
+            return Math.max(backoffUntilMem, Number(storeGet('ea_backoff_until')) || 0);
+        }
 
-                lastRecords = records;
+        function setBackoff(ms) {
+            backoffUntilMem = Date.now() + ms;
+            storeSet('ea_backoff_until', backoffUntilMem);
+        }
 
-                const time = now.toLocaleTimeString('da-DK', { hour: '2-digit', minute: '2-digit' });
-                const dateStr = getTargetDateStr();
-                document.getElementById('date-badge').innerText =
-                    `${dateStr.split('-').reverse().join('/')} · ${currentZone} · opdateret ${time}`;
+        function registerFailure(retryAfterMs) {
+            failCount++;
+            const wait = retryAfterMs || Math.min(BACKOFF_MAX_MS, BACKOFF_BASE_MS * Math.pow(2, failCount - 1));
+            setBackoff(wait);
+        }
 
-                applySelectedDay();
-            } catch (err) {
-                if (myRequest !== requestCounter) return;
-                console.error('Elpris-fejl:', err);
+        function registerSuccess() {
+            failCount = 0;
+            backoffUntilMem = 0;
+            storeSet('ea_backoff_until', 0);
+        }
 
-                if (rawSpotPrices.length > 0) {
-                    document.getElementById('current-status-text').innerText =
-                        `Kunne ikke opdatere (${err.message}). Viser senest hentede priser.`;
-                    updateDashboard();
-                    return;
-                }
-                document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
-                document.getElementById('current-status-text').innerText = `Fejl: ${err.message}`;
+        // En dag er komplet, når begge områder har mindst 23 forskellige timer (sommer-/vintertid: 23-25 timer)
+        function isComplete(records) {
+            return ['DK1', 'DK2'].every(zone => {
+                const hours = new Set();
+                records.forEach(r => { if (r.PriceArea === zone) hours.add(r.TimeDK.substring(0, 13)); });
+                return hours.size >= 23;
+            });
+        }
+
+        // ---- Nord Pool ----
+        // Svaret indeholder 15-minutters (eller timers) priser i DKK/MWh pr. område med UTC-starttid.
+        // Vi omsætter til samme format som resten af koden bruger: { PriceArea, TimeDK, DayAheadPriceDKK }.
+        function normalizeNordPool(json) {
+            const out = [];
+            (json.multiAreaEntries || []).forEach(e => {
+                const t = dkParts(new Date(e.deliveryStart)).timeDK;
+                ['DK1', 'DK2'].forEach(zone => {
+                    const v = e.entryPerArea && e.entryPerArea[zone];
+                    if (typeof v === 'number') out.push({ PriceArea: zone, TimeDK: t, DayAheadPriceDKK: v });
+                });
+            });
+            return out;
+        }
+
+        class RateLimitError extends Error {
+            constructor(retryAfterMs) { super('HTTP 429'); this.retryAfterMs = retryAfterMs; }
+        }
+
+        async function fetchNordPool(dateStr) {
+            const params = new URLSearchParams({
+                date: dateStr, market: 'DayAhead', deliveryArea: 'DK1,DK2', currency: 'DKK'
+            });
+            const res = await fetch(`${NORDPOOL_URL}?${params}`);
+            if (res.status === 204 || res.status === 404) return []; // Ikke offentliggjort endnu
+            if (res.status === 429) {
+                const ra = Number(res.headers.get('Retry-After'));
+                throw new RateLimitError(ra > 0 ? ra * 1000 : 30 * 60 * 1000);
             }
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            return normalizeNordPool(await res.json());
+        }
+
+        // ---- Reserve: din Worker (Energinet) ----
+        async function fetchWorker(dateStr) {
+            const params = new URLSearchParams({
+                start: `${dateStr}T00:00`,
+                end: `${addDays(dateStr, 1)}T00:00`,
+                filter: JSON.stringify({ PriceArea: ['DK1', 'DK2'] }),
+                sort: 'TimeDK asc',
+                limit: '500'
+            });
+            const res = await fetch(`${WORKER_URL}?${params}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const json = await res.json();
+            return (json.records || []).filter(r => r.TimeDK && r.TimeDK.startsWith(dateStr) && r.DayAheadPriceDKK != null);
+        }
+
+        // Henter én dag. Kalder KUN netværket, hvis dagen mangler/er ufuldstændig,
+        // der ikke er en aktiv pause, og sidste forsøg er mere end RETRY_MS gammelt.
+        async function loadDay(dateStr) {
+            const key = CACHE_PREFIX + dateStr;
+            const cached = storeGet(key);
+            if (cached && cached.complete) return cached;
+            if (cached && Date.now() - cached.checkedAt < RETRY_MS) return cached;
+            if (Date.now() < getBackoffUntil()) return cached;
+            if (inflight[dateStr]) return inflight[dateStr];
+
+            inflight[dateStr] = (async () => {
+                try {
+                    let records = null;
+                    let source = 'Nord Pool';
+                    try {
+                        records = await fetchNordPool(dateStr);
+                    } catch (err) {
+                        if (err instanceof RateLimitError) throw err;   // Respektér pausen, prøv ikke andre veje
+                        console.warn('Nord Pool fejlede:', err.message);
+                        if (!USE_WORKER_FALLBACK) throw err;
+                        records = await fetchWorker(dateStr);
+                        source = 'Energinet';
+                    }
+                    registerSuccess();
+                    const entry = {
+                        records, source,
+                        complete: isComplete(records),
+                        fetchedAt: Date.now(),
+                        checkedAt: Date.now()
+                    };
+                    storeSet(key, entry);
+                    return entry;
+                } catch (err) {
+                    registerFailure(err instanceof RateLimitError ? err.retryAfterMs : 0);
+                    if (cached) storeSet(key, { ...cached, checkedAt: Date.now() });
+                    throw err;
+                } finally {
+                    delete inflight[dateStr];
+                }
+            })();
+            return inflight[dateStr];
+        }
+
+        function updateBadge() {
+            const dateStr = getTargetDateStr();
+            const entry = storeGet(CACHE_PREFIX + dateStr);
+            let extra = '';
+            if (entry && entry.fetchedAt) {
+                const t = new Date(entry.fetchedAt).toLocaleTimeString('da-DK', {
+                    timeZone: 'Europe/Copenhagen', hour: '2-digit', minute: '2-digit'
+                });
+                extra = ` · hentet ${t} (${entry.source})`;
+            }
+            document.getElementById('date-badge').innerText =
+                `${dateStr.split('-').reverse().join('/')} · ${currentZone}${extra}`;
+        }
+
+        // Samler data fra cache og henter kun det, der mangler.
+        async function refreshPrices() {
+            if (document.hidden) return;   // Ingen kald i baggrundsfaner
+            const myRequest = ++requestCounter;
+            pruneCache();
+
+            const dk = dkParts();
+            loadedDate = dk.dateStr;
+            const wanted = [dk.dateStr];
+            if (dk.hour * 60 + dk.minute >= TOMORROW_PUBLISH_MINUTES) wanted.push(addDays(dk.dateStr, 1));
+
+            let lastError = null;
+            const entries = [];
+            for (const d of wanted) {                       // Efter hinanden, ikke parallelt
+                try {
+                    const e = await loadDay(d);
+                    if (e) entries.push(e);
+                } catch (err) {
+                    lastError = err;
+                    console.error('Elpris-fejl:', err);
+                    const e = storeGet(CACHE_PREFIX + d);
+                    if (e) entries.push(e);
+                }
+            }
+
+            if (myRequest !== requestCounter) return;
+
+            lastRecords = entries.flatMap(e => e.records);
+
+            if (lastRecords.length === 0 && lastError) {
+                document.getElementById('current-hour-label').innerText = 'Kunne ikke hente priser';
+                document.getElementById('current-status-text').innerText =
+                    `Fejl: ${lastError.message}. Prøver igen automatisk.`;
+                return;
+            }
+            applySelectedDay();
         }
 
         // ==================== DASHBOARD ====================
@@ -402,7 +584,7 @@
 
             const isToday = selectedDay === 'today';
             const now = new Date();
-            const currentHour = isToday ? now.getHours() : -1;
+            const currentHour = isToday ? dkParts(now).hour : -1;
 
             const pricesOnly = todaysPrices.map(p => p.price);
             const minObj = todaysPrices.reduce((p, c) => c.price < p.price ? c : p, todaysPrices[0]);
@@ -623,6 +805,7 @@
             btnTomorrow.className = day === 'tomorrow' ? active : inactive;
 
             if (lastRecords.length > 0) applySelectedDay();
+            refreshPrices();   // Henter kun, hvis morgendagen mangler og pausen er udløbet
         }
 
         function setZone(zone) {
@@ -662,9 +845,13 @@
 
         // ==================== START ====================
 
-        fetchLivePrices();
-        setInterval(fetchLivePrices, FETCH_INTERVAL_MS);  // Henter begge områder hvert 10. minut
-        setInterval(() => { if (selectedDay === 'today') updateDashboard(); }, 60 * 1000); // Opdaterer aktuel time
+        refreshPrices();
+        setInterval(refreshPrices, CHECK_INTERVAL_MS);   // Gør normalt ikke noget netværkskald (cache)
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshPrices(); });
+        setInterval(() => {
+            if (dkParts().dateStr !== loadedDate) { refreshPrices(); return; }   // Ny dag
+            if (selectedDay === 'today') updateDashboard();                      // Opdaterer aktuel time
+        }, 60 * 1000);
     </script>
 </body>
 </html>
